@@ -1205,18 +1205,38 @@ class Model:
     def handleTriggerOnDeactivateEntities(self):
         """ Entities that are defined outside of control entities via the `triggerOnDetivate` key. """
         if len(self.triggerOnDeactivate) > 0:
-            self.log.info("handleTriggerOnDeactivateEntities :: Triggering Deactivation entities (no params passed along)")
+            self.log.info("handleTriggerOnDeactivateEntities :: Triggering Deactivation entities (Yes! params passed along)")
             for e in self.triggerOnDeactivate:
                 self.log.debug("Triggering with turn_on call: %s", e)
-                self.call_service(e, "turn_on")
+                if self.lightParams.get(CONF_SERVICE_DATA_OFF) is not None:
+                    self.log.debug(
+                        "Triggering with turn_on call %s with service parameters %s",
+                        e,
+                        self.lightParams.get(CONF_SERVICE_DATA_OFF),
+                    )
+                    self.call_service(e, "turn_on", **self.lightParams.get(CONF_SERVICE_DATA_OFF))
+                else:
+                    self.log.debug("Triggering with turn_on call %s (no parameters provided to pass to service call)", e)
+                    self.call_service(e, "turn_on")
 
     def handleTriggerOnActivateEntities(self):
         """ Entities that are defined outside of control entities via the `triggerOnActivate` key. """
         if len(self.triggerOnActivate) > 0:
-            self.log.info("handleTriggerOnActivateEntities :: Triggering Activation entities (no params passed along)")
+            self.log.info("handleTriggerOnActivateEntities :: Triggering Activation entities (Yes! params passed along)")
             for e in self.triggerOnActivate:
-                self.log.debug("Triggering with turn_on call: %s", e)
-                self.call_service(e, "turn_on")
+                # if light params are defined
+                if self.lightParams.get(CONF_SERVICE_DATA) is not None:
+                    self.log.debug(
+                        "Triggering with turn_on call %s with service parameters %s",
+                        e,
+                        self.lightParams.get(CONF_SERVICE_DATA),
+                    )
+                    self.call_service(
+                        e, "turn_on", **self.lightParams.get(CONF_SERVICE_DATA)
+                    )
+                else:
+                    self.log.debug("Turning on %s (no parameters provided to pass to service call)", e)
+                    self.call_service(e, "turn_on")
 
     def turn_on_control_entities(self):
         self.handleTriggerOnActivateEntities()
