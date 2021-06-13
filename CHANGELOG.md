@@ -2,6 +2,51 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+<a name="9.2.9"></a>
+## [9.2.9](https://github.com/danobot/entity-controller/compare/v9.2.8...v9.2.9) (2021-06-11)
+
+
+### Bug Fixes
+
+* upgrade transitions version to 0.8.8 ([88399ad](https://github.com/danobot/entity-controller/commit/88399ad))
+
+
+
+<a name="9.2.8"></a>
+## [9.2.8](https://github.com/danobot/entity-controller/compare/v9.2.7...v9.2.8) (2021-06-11)
+
+
+
+<a name="9.2.7"></a>
+## [9.2.7](https://github.com/danobot/entity-controller/compare/v9.2.6...v9.2.7) (2021-06-11)
+
+
+
+<a name="9.2.6"></a>
+## [9.2.6](https://github.com/danobot/entity-controller/compare/v9.2.5...v9.2.6) (2021-06-11)
+
+
+
+<a name="9.2.5"></a>
+## [9.2.5](https://github.com/danobot/entity-controller/compare/v9.2.4...v9.2.5) (2021-06-11)
+
+
+### Bug Fixes
+
+* upgrade transitions version to 0.8.8 ([#251](https://github.com/danobot/entity-controller/issues/251)) ([de9c954](https://github.com/danobot/entity-controller/commit/de9c954))
+
+
+
+<a name="9.2.4"></a>
+## [9.2.4](https://github.com/danobot/entity-controller/compare/v9.2.3...v9.2.4) (2021-05-25)
+
+
+### Bug Fixes
+
+* Version key ([#243](https://github.com/danobot/entity-controller/issues/243)) ([dc1f1ec](https://github.com/danobot/entity-controller/commit/dc1f1ec))
+
+
+
 <a name="9.2.3"></a>
 ## [9.2.3](https://github.com/danobot/entity-controller/compare/v9.2.2...v9.2.3) (2021-05-04)
 
