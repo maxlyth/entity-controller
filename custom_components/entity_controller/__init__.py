@@ -18,7 +18,7 @@ along with Entity Controller.  If not, see <https://www.gnu.org/licenses/>.
 """
 Entity controller component for Home Assistant.
 Maintainer:       Daniel Mason
-Version:          v9.2.9
+Version:          v9.5.2
 Project Page:     https://danielbkr.net/projects/entity-controller/
 Documentation:    https://github.com/danobot/entity-controller
 """
@@ -55,7 +55,7 @@ from .const import (
     CONF_TRANSITION_BEHAVIOUR_ON,
     CONF_TRANSITION_BEHAVIOUR_OFF,
     CONF_TRANSITION_BEHAVIOUR_IGNORE,
-    
+
     # Behaviours
     CONF_BEHAVIOURS,
     CONF_ON_ENTER_IDLE,
@@ -87,6 +87,7 @@ from .const import (
     CONF_STATE_ENTITIES,
     CONF_DELAY,
     CONF_BLOCK_TIMEOUT,
+    CONF_DISABLE_BLOCK,
     CONF_SENSOR_TYPE_DURATION,
     CONF_SENSOR_TYPE,
     CONF_SENSOR_RESETS_TIMER,
@@ -95,7 +96,7 @@ from .const import (
     CONF_IGNORED_EVENT_SOURCES,
     CONSTRAIN_START,
     CONSTRAIN_END,
-    
+
     CONTEXT_ID_CHARACTER_LIMIT
 )
 
@@ -105,7 +106,7 @@ from .entity_services import (
 
 
 
-VERSION = '9.2.9'
+VERSION = '9.5.2'
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -145,16 +146,17 @@ ENTITY_SCHEMA = vol.Schema(
         vol.Optional(CONF_TRIGGER_ON_DEACTIVATE, default=None): cv.entity_ids,
         vol.Optional(CONF_STATE_ENTITIES, default=[]): cv.entity_ids,
         vol.Optional(CONF_BLOCK_TIMEOUT, default=None): cv.positive_int,
+        vol.Optional(CONF_DISABLE_BLOCK, default=False): cv.boolean,
         # vol.Optional(CONF_IGNORE_STATE_CHANGES_UNTIL, default=None): cv.positive_int,
         vol.Optional(CONF_NIGHT_MODE, default=None): MODE_SCHEMA,
         vol.Optional(CONF_STATE_ATTRIBUTES_IGNORE, default=[]): cv.ensure_list,
         vol.Optional(CONF_IGNORED_EVENT_SOURCES, default=[]): cv.ensure_list,
         vol.Optional(CONF_SERVICE_DATA, default=None): vol.Coerce(
             dict
-        ),  
+        ),
         vol.Optional(CONF_BEHAVIOURS, default=None): vol.Coerce(
             dict
-        ),  
+        ),
         # Default must be none because we differentiate between set and unset
         vol.Optional(CONF_SERVICE_DATA_OFF, default=None): vol.Coerce(dict),
     },
@@ -193,6 +195,15 @@ async def async_setup(hass, config):
         dest="overridden",
     )
 
+    machine.add_transition(
+        trigger="activate",
+        source=["idle", "blocked"],
+        dest="active",
+    )
+    machine.add_transition(
+        trigger="activate", source="active_timer", dest=None, after="_reset_timer"
+    )
+
     # Idle
     # machine.add_transition(trigger='sensor_off',           source='idle',              dest=None)
     machine.add_transition(
@@ -204,15 +215,22 @@ async def async_setup(hass, config):
     machine.add_transition(
         trigger="sensor_on",
         source="idle",
-        dest="blocked",
+        dest="active",
         conditions=["is_state_entities_on"],
+        unless="is_block_enabled"
+    )
+    machine.add_transition(
+        trigger="sensor_on",
+        source="idle",
+        dest="blocked",
+        conditions=["is_state_entities_on", "is_block_enabled"],
     )
     machine.add_transition(trigger="enable", source="idle", dest=None, conditions=["is_state_entities_off"])
 
     # Blocked
     machine.add_transition(trigger="enable", source="blocked", dest="idle", conditions=["is_state_entities_off"])
     machine.add_transition(
-        trigger="sensor_on", source="blocked", dest="blocked"
+        trigger="sensor_on", source="blocked", dest="blocked", conditions=["is_block_enabled"]
     )  # re-entering self-transition (on_enter callback executed.)
 
     # Overridden
@@ -242,7 +260,6 @@ async def async_setup(hass, config):
         dest="idle",
         conditions=["is_state_entities_on", "is_duration_sensor", "is_sensor_off"],
     )
-
 
     machine.add_transition(
         trigger="enter", source="active", dest="active_timer", unless="will_stay_on"
@@ -306,8 +323,11 @@ async def async_setup(hass, config):
         dest="idle",
         conditions=["is_state_entities_off"]
     )
-    machine.add_transition(trigger='control', source='active_timer',
-                           dest='blocked', conditions=['is_state_entities_on'])
+    machine.add_transition(trigger="control", source="active_timer",
+                           dest="blocked", conditions=["is_state_entities_on", "is_block_enabled"])
+    # When block is disabled, "control" will reset the active timer
+    machine.add_transition(trigger="control", source="active_timer",
+                           dest=None, after="_reset_timer", conditions=["is_state_entities_on"], unless="is_block_enabled")
 
     # machine.add_transition(trigger='sensor_off',           source='active_stay_on',    dest=None)
     # machine.add_transition(trigger="timer_expires", source="active_stay_on", dest=None)
@@ -331,7 +351,7 @@ async def async_setup(hass, config):
         conditions=["is_override_state_on"],
     )
     # Enter blocked state when component is enabled and entity is on
-    machine.add_transition(trigger="blocked", source="constrained", dest="blocked")
+    machine.add_transition(trigger="blocked", source="constrained", dest="blocked", conditions=["is_block_enabled"])
 
     for myconfig in config[DOMAIN]:
         _LOGGER.info("Domain Configuration: " + str(myconfig))
@@ -356,6 +376,7 @@ async def async_setup(hass, config):
 
 class EntityController(entity.Entity):
     from .entity_services import (
+        async_entity_service_activate as async_activate,
         async_entity_service_clear_block as async_clear_block,
         async_entity_service_enable_stay_mode as async_enable_stay_mode,
         async_entity_service_disable_stay_mode as async_disable_stay_mode,
@@ -604,7 +625,7 @@ class Model:
         ):
             self.set_context(new.context)
             self.enable()
-        
+
     @callback
     def state_entity_state_change(self, entity, old, new):
         """ State change callback for state entities. This can be called with either a state change or an attribute change. """
@@ -733,7 +754,7 @@ class Model:
         return self._override_entity_state() is None
 
     # def is_within_grace_period(self):
-    #     """ Dtermines if the last service call EC made was within the last 2 seconds. 
+    #     """ Dtermines if the last service call EC made was within the last 2 seconds.
     #     This is important or else EC will react to state changes caused by EC itself which results in going into blocked state."""
     #     return datetime.now() < self.ignore_state_changes_until
 
@@ -791,6 +812,9 @@ class Model:
 
     def is_state_entities_on(self):
         return self._state_entity_state() is not None
+
+    def is_block_enabled(self):
+        return self.disable_block is False
 
     def will_stay_on(self):
         return self.stay
@@ -1095,8 +1119,8 @@ class Model:
                 event.async_call_later(self.hass, 1, self.constrain_entity)
 
         self.log_config()
-    
-   
+
+
 
 
     def config_override_entities(self, config):
@@ -1118,6 +1142,7 @@ class Model:
         self.config[CONF_SENSOR_RESETS_TIMER] = config.get(CONF_SENSOR_RESETS_TIMER)
 
         self.block_timeout = config.get(CONF_BLOCK_TIMEOUT, None)
+        self.disable_block = config.get(CONF_DISABLE_BLOCK, False)
         self.image_prefix = config.get("image_prefix", "/fsm_diagram_")
         self.image_path = config.get("image_path", "/conf/temp")
         self.backoff = config.get("backoff", False)
@@ -1192,9 +1217,11 @@ class Model:
 
         self.update(start_time=parsed_start)
 
-        if self.is_state_entities_on():
+        if self.is_state_entities_on() and self.is_block_enabled():
             self.blocked()
         else:
+            # If the entity is on and block is disabled, we just transition from constrained
+            # to idle and leave the entity on. (Don't start a timer to turn it off.)
             self.enable()
         self.do_transition_behaviour(CONF_ON_EXIT_CONSTRAINED)
 
@@ -1705,7 +1732,7 @@ class Model:
             return self.transition_behaviours[key]
         else:
             return None
-            
+
     def do_transition_behaviour(self, behaviour):
         """ Wrapper method for acting on transition behaviours such as at time of end constraint of state transitions from override state. """
         self.log.debug("%10s | Performing Transition Behaviour" % (behaviour))
